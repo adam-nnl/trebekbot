@@ -45,6 +45,8 @@ post "/" do
     elsif is_channel_blacklisted?(params[:channel_name])
       response = "Sorry, can't play in this channel."
     elsif params[:text].match(/^jeopardy me/i)
+    #add random 1/20 chance to fire daily double
+      response = daily_double(params)
       response = respond_with_question(params)
     elsif params[:text].match(/my score$/i)
       response = respond_with_user_score(params[:user_id])
@@ -174,6 +176,12 @@ def process_answer(params)
     end
   end
   reply
+end
+
+# Daily double bonus!
+# 
+def daily_double(params)
+  
 end
 
 # Formats a number as currency.
