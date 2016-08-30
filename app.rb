@@ -58,7 +58,7 @@ post "/" do
       response = respond_with_leaderboard
     elsif params[:text].match(/^show (me\s+)?(the\s+)?loserboard$/i)
       response = respond_with_loserboard
-    elsif $dd_user.nil?
+    elsif $dd_user.nil? && $dd_user.slice($dd_user.length - 1) != 0
       response = dd_wager(params)
     else
       response = process_answer(params)
@@ -182,6 +182,18 @@ def process_answer(params)
     end
   end
   reply
+end
+
+# Daily Double wager input?
+def d_wager(params)
+  key = "current_question:#{channel_id}"
+  current_question = $redis.get(key)  
+  user_id = params[:user_id]
+  user_answer = params[:text]
+  if user_id = $dd_user
+    reply = "You are wagering #{currency_format(user_answer))}. Good luck!"
+    redis.set("mykey", user_answer)
+    $dd_user = "#{$dd_user}000
 end
 
 # Daily double bonus!
