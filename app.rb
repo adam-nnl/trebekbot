@@ -192,7 +192,7 @@ def d_wager(params)
   user_answer = params[:text]
   if user_id = $dd_user
     reply = "You are wagering #{currency_format(user_answer))}. Good luck!"
-    redis.set("mykey", user_answer)
+    redis.set("value", user_answer)
     $dd_user = "#{$dd_user}000
 end
 
