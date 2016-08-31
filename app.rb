@@ -119,8 +119,7 @@ def get_question
   request = HTTParty.get(uri)
   puts "[LOG] #{request.body}"
   response = JSON.parse(request.body).first
-  question = response["question"]
-  if question.nil? || question.strip == "" || ENV["QUESTION_SUBSTRING_BLACKLIST"].any? { |phrase| question.include?(phrase) }
+  if response["question"].nil? || response["question"].strip == ""
     response = get_question
   end
   response["value"] = 200 if response["value"].nil?
