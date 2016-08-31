@@ -45,8 +45,7 @@ post "/" do
     elsif is_channel_blacklisted?(params[:channel_name])
       response = "Sorry, can't play in this channel."
     elsif params[:text].match(/^jeopardy me/i)
-      rand > ENV["DD_CHANCE"].to_f ? respond_with_question(params) : daily_double(params)
-      #response = respond_with_question(params)
+      response = respond_with_question(params)
     elsif params[:text].match(/my score$/i)
       response = respond_with_user_score(params[:user_id])
     elsif params[:text].match(/^help$/i)
@@ -96,31 +95,9 @@ def respond_with_question(params)
     previous_question = $redis.get(key)
     if !previous_question.nil?
       previous_question = JSON.parse(previous_question)["answer"]
-      question = "The answer is `#{previous_question}`.\n"
+      question = "The answer to the previous question was: `#{previous_question}`.\n"
     end
     question += "The category is `#{response["category"]["title"]}` for #{currency_format(response["value"])}: `#{response["question"]}`"
-    puts "[LOG] ID: #{response["id"]} | Category: #{response["category"]["title"]} | Question: #{response["question"]} | Answer: #{response["answer"]} | Value: #{response["value"]}"
-    $redis.pipelined do
-      $redis.set(key, response.to_json)
-      $redis.setex("shush:question:#{channel_id}", 10, "true")
-    end
-  end
-  question
-end
-
-#Daily Double
-def daily_double(params)
-  channel_id = params[:channel_id]
-  question = ""
-  unless $redis.exists("shush:question:#{channel_id}")
-    response = get_question
-    key = "current_question:#{channel_id}"
-    previous_question = $redis.get(key)
-    if !previous_question.nil?
-      previous_question = JSON.parse(previous_question)["answer"]
-      question = "The answer is `#{previous_question}`.\n"
-    end
-    question += "DAILY DOUBLE!! The category is `#{response["category"]["title"]}` for #{currency_format(response["value"])}: `#{response["question"]}`"
     puts "[LOG] ID: #{response["id"]} | Category: #{response["category"]["title"]} | Question: #{response["question"]} | Answer: #{response["answer"]} | Value: #{response["value"]}"
     $redis.pipelined do
       $redis.set(key, response.to_json)
