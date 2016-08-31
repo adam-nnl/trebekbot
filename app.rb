@@ -7,8 +7,6 @@ require "dotenv"
 require "text"
 require "sanitize"
 
-#$dd_user
-
 configure do
   # Load .env vars
   Dotenv.load
@@ -47,9 +45,7 @@ post "/" do
     elsif is_channel_blacklisted?(params[:channel_name])
       response = "Sorry, can't play in this channel."
     elsif params[:text].match(/^jeopardy me/i)
-      #add random chance to fire daily double based on config
-      #rand > integer(ENV["DD_CHANCE"]) ? respond_with_question(params) : daily_double(params)
-      daily_double(params)
+      rand > integer(ENV["DD_CHANCE"]) ? respond_with_question(params) : daily_double(params)
       #response = respond_with_question(params)
     elsif params[:text].match(/my score$/i)
       response = respond_with_user_score(params[:user_id])
@@ -59,8 +55,6 @@ post "/" do
       response = respond_with_leaderboard
     elsif params[:text].match(/^show (me\s+)?(the\s+)?loserboard$/i)
       response = respond_with_loserboard
-    #elsif $dd_user.nil? && $dd_user.slice($dd_user.length - 1) != 0
-    #  response = dd_wager(params)
     else
       response = process_answer(params)
     end
@@ -114,8 +108,31 @@ def respond_with_question(params)
   question
 end
 
+#Daily Double
+def daily_double(params)
+  channel_id = params[:channel_id]
+  question = ""
+  unless $redis.exists("shush:question:#{channel_id}")
+    response = get_question
+    key = "current_question:#{channel_id}"
+    previous_question = $redis.get(key)
+    if !previous_question.nil?
+      previous_question = JSON.parse(previous_question)["answer"]
+      question = "The answer is `#{previous_question}`.\n"
+    end
+    question += "DAILY DOUBLE!! The category is `#{response["category"]["title"]}` for #{currency_format(response["value"])}: `#{response["question"]}`"
+    puts "[LOG] ID: #{response["id"]} | Category: #{response["category"]["title"]} | Question: #{response["question"]} | Answer: #{response["answer"]} | Value: #{response["value"]}"
+    $redis.pipelined do
+      $redis.set(key, response.to_json)
+      $redis.setex("shush:question:#{channel_id}", 10, "true")
+    end
+  end
+  question
+end
+
 # Gets a random answer from the jService API, and does some cleanup on it:
 # If the question is not present, requests another one
+# If the question contains a blacklisted substring, request another one
 # If the answer doesn't have a value, sets a default of $200
 # If there's HTML in the answer, sanitizes it (otherwise it won't match the user answer)
 # Adds an "expiration" value, which is the timestamp of the Slack request + the seconds to answer config var
@@ -125,7 +142,8 @@ def get_question
   request = HTTParty.get(uri)
   puts "[LOG] #{request.body}"
   response = JSON.parse(request.body).first
-  if response["question"].nil? || response["question"].strip == ""
+  question = response["question"]
+  if question.nil? || question.strip == "" || ENV["QUESTION_SUBSTRING_BLACKLIST"].any? { |phrase| question.include?(phrase) }
     response = get_question
   end
   response["value"] = 200 if response["value"].nil?
@@ -150,16 +168,15 @@ def process_answer(params)
   key = "current_question:#{channel_id}"
   current_question = $redis.get(key)
   reply = ""
-  if current_question.nil? 
+  if current_question.nil?
     reply = trebek_me if !$redis.exists("shush:answer:#{channel_id}")
+  else
     current_question = JSON.parse(current_question)
     current_answer = current_question["answer"]
     user_answer = params[:text]
     answered_key = "user_answer:#{channel_id}:#{current_question["id"]}:#{user_id}"
     if $redis.exists(answered_key)
       reply = "You had your chance, #{get_slack_name(user_id)}. Let someone else answer."
-    #elsif user_id != $dd_user
-    #  reply = "This is a Daily Double question for #{$dd_user}. Only they can answer."
     elsif params["timestamp"].to_f > current_question["expiration"]
       if is_correct_answer?(current_answer, user_answer)
         reply = "That is correct, #{get_slack_name(user_id)}, but time's up! Remember, you have #{ENV["SECONDS_TO_ANSWER"]} seconds to answer."
@@ -170,7 +187,6 @@ def process_answer(params)
     elsif is_question_format?(user_answer) && is_correct_answer?(current_answer, user_answer)
       score = update_score(user_id, current_question["value"])
       reply = "That is correct, #{get_slack_name(user_id)}. Your total score is #{currency_format(score)}."
-      $dd_user = nil
       mark_question_as_answered(params[:channel_id])
     elsif is_correct_answer?(current_answer, user_answer)
       score = update_score(user_id, (current_question["value"] * -1))
@@ -183,30 +199,6 @@ def process_answer(params)
     end
   end
   reply
-end
-
-# Daily Double wager input?
-
-# Daily double bonus!
-def daily_double(params)
-  channel_id = params[:channel_id]
-  question = ""
-  unless $redis.exists("shush:question:#{channel_id}")
-    response = get_question
-    key = "current_question:#{channel_id}"
-    previous_question = $redis.get(key)
-    if !previous_question.nil?
-      previous_question = JSON.parse(previous_question)["answer"]
-      question = "The answer to the previous question was: `#{previous_question}`.\n"
-    end
-    question += "DAILY DOUBLE! The category is `#{response["category"]["title"]}` for #{currency_format("10000")}: `#{response["question"]}`"
-    puts "[LOG] ID: #{response["id"]} | Category: #{response["category"]["title"]} | Question: #{response["question"]} | Answer: #{response["answer"]} | Value: #{response["value"]}"
-    $redis.pipelined do
-      $redis.set(key, response.to_json)
-      $redis.setex("shush:question:#{channel_id}", 10, "true")
-    end
-  end
-  question
 end
 
 # Formats a number as currency.
