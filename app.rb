@@ -45,7 +45,7 @@ post "/" do
     elsif is_channel_blacklisted?(params[:channel_name])
       response = "Sorry, can't play in this channel."
     elsif params[:text].match(/^jeopardy me/i)
-      rand > ENV["DD_CHANCE"].to_i ? respond_with_question(params) : daily_double(params)
+      rand > ENV["DD_CHANCE"].to_f ? respond_with_question(params) : daily_double(params)
       #response = respond_with_question(params)
     elsif params[:text].match(/my score$/i)
       response = respond_with_user_score(params[:user_id])
