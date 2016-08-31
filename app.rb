@@ -48,7 +48,7 @@ post "/" do
       response = "Sorry, can't play in this channel."
     elsif params[:text].match(/^jeopardy me/i)
       #add random chance to fire daily double based on config
-      rand > ENV["DD_CHANCE"] ? daily_double(params) : respond_with_question(params)
+      rand > ENV["DD_CHANCE"] ? respond_with_question(params) : daily_double(params)
       #response = respond_with_question(params)
     elsif params[:text].match(/my score$/i)
       response = respond_with_user_score(params[:user_id])
@@ -191,13 +191,28 @@ def d_wager(params)
   user_id = params[:user_id]
   user_answer = params[:text]
   if user_id = $dd_user
-    reply = "You are wagering #{currency_format(user_answer))}. Good luck!"
+    reply = "You are wagering #{currency_format(user_answer)}. Good luck!"
     redis.set("value", user_answer)
-    $dd_user = "#{$dd_user}000
+    $dd_user = "#{$dd_user}000"
+    unless $redis.exists("shush:question:#{channel_id}")
+      response = get_question
+      key = "current_question:#{channel_id}"
+      previous_question = $redis.get(key)
+      if !previous_question.nil?
+        previous_question = JSON.parse(previous_question)["answer"]
+        question = "The answer is `#{previous_question}`.\n"
+      end
+      question += "DAILY DOUBLE! The category is `#{response["category"]["title"]}` for #{currency_format(user_answer)}: `#{response["question"]}`"
+      puts "[LOG] ID: #{response["id"]} | Category: #{response["category"]["title"]} | Question: #{response["question"]} | Answer: #{response["answer"]} | Value: #{currency_format(user_answer)}"
+      $redis.pipelined do
+        $redis.set(key, response.to_json)
+        $redis.setex("shush:question:#{channel_id}", 10, "true")
+    end
+  end
+  question  
 end
 
 # Daily double bonus!
-# 
 def daily_double(params)
   channel_id = params[:channel_id]
   question = ""
@@ -206,22 +221,22 @@ def daily_double(params)
   reply = ""
   reply = "You have a Daily Double, #{get_slack_name(user_id)}! Please enter an amount to wager, up to #{currency_format(user_score)} maximum."
   reply
-  unless $redis.exists("shush:question:#{channel_id}")
-    response = get_question
-    key = "current_question:#{channel_id}"
-    previous_question = $redis.get(key)
-    if !previous_question.nil?
-      previous_question = JSON.parse(previous_question)["answer"]
-      question = "The answer is `#{previous_question}`.\n"
-    end
-    question += "DAILY DOUBLE! The category is `#{response["category"]["title"]}` for #{currency_format(response["value"])}: `#{response["question"]}`"
-    puts "[LOG] ID: #{response["id"]} | Category: #{response["category"]["title"]} | Question: #{response["question"]} | Answer: #{response["answer"]} | Value: #{response["value"]}"
-    $redis.pipelined do
-      $redis.set(key, response.to_json)
-      $redis.setex("shush:question:#{channel_id}", 10, "true")
-    end
-  end
-  question  
+  #unless $redis.exists("shush:question:#{channel_id}")
+  #  response = get_question
+  #  key = "current_question:#{channel_id}"
+  #  previous_question = $redis.get(key)
+  #  if !previous_question.nil?
+  #    previous_question = JSON.parse(previous_question)["answer"]
+  #    question = "The answer is `#{previous_question}`.\n"
+  #  end
+  #  question += "DAILY DOUBLE! The category is `#{response["category"]["title"]}` for #{currency_format(response["value"])}: `#{response["question"]}`"
+  #  puts "[LOG] ID: #{response["id"]} | Category: #{response["category"]["title"]} | Question: #{response["question"]} | Answer: #{response["answer"]} | Value: #{response["value"]}"
+  #  $redis.pipelined do
+  #    $redis.set(key, response.to_json)
+  #    $redis.setex("shush:question:#{channel_id}", 10, "true")
+  #  end
+  #end
+  #question  
 end
 
 # Formats a number as currency.
